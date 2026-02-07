@@ -37,7 +37,6 @@ export function useTransferFrom() {
 
         setStatus("loading");
 
-        // Execute transaction with Circle (show PIN UI)
         const result = await writeContract({
           address: tokenAddress,
           abi,
@@ -45,7 +44,6 @@ export function useTransferFrom() {
           args: [from, to, amount],
         });
 
-        // All Circle transactions return success after user confirms
         setStatus("success");
         return result;
       } catch (e) {
