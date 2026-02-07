@@ -2,11 +2,11 @@
 
 import { ConnectButton } from "@/components/connect-button";
 import { Github, Sparkles, Shield, Zap, Globe } from "lucide-react";
-import { useConnection } from "wagmi";
+import { useUserAddress } from "@/hooks/use-user-address";
 
 export default function HomePage() {
-  const {address} = useConnection();
-  console.log("Wagmi connected address:", address);
+  const { address, isConnected } = useUserAddress();
+  console.log("Wagmi connected address:", address, "isConnected:", isConnected);
   return (
     <main className="min-h-screen">
       {/* Header */}
@@ -16,14 +16,22 @@ export default function HomePage() {
             <div className="h-10 w-10 rounded-xl bg-linear-to-br from-blue-600 to-blue-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
               <Sparkles className="h-5 w-5 text-white" />
             </div>
-            <span className="text-xl font-bold gradient-text-blue">CircleSDK</span>
+            <span className="text-xl font-bold gradient-text-blue">
+              CircleSDK
+            </span>
           </div>
 
           <nav className="hidden md:flex items-center gap-8">
-            <a href="#features" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+            <a
+              href="#features"
+              className="text-sm text-gray-600 hover:text-blue-600 transition-colors"
+            >
               Features
             </a>
-            <a href="#docs" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+            <a
+              href="#docs"
+              className="text-sm text-gray-600 hover:text-blue-600 transition-colors"
+            >
               Documentation
             </a>
             <a
@@ -39,7 +47,9 @@ export default function HomePage() {
 
           <ConnectButton />
         </div>
-        address: {address} 
+        <div className="text-xs text-gray-500 px-6 py-2">
+          {address && <span className="font-mono">{address}</span>}
+        </div>
       </header>
 
       {/* Hero Section */}
@@ -59,9 +69,9 @@ export default function HomePage() {
           </h1>
 
           <p className="text-xl text-gray-600 mb-10 max-w-2xl mx-auto leading-relaxed">
-            Create and manage secure wallets with just a few clicks. 
-            Experience the future of Web3 onboarding with Circle&apos;s 
-            gasless, PIN-protected smart contract accounts.
+            Create and manage secure wallets with just a few clicks. Experience
+            the future of Web3 onboarding with Circle&apos;s gasless,
+            PIN-protected smart contract accounts.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -86,8 +96,8 @@ export default function HomePage() {
               Why Choose Circle Wallets?
             </h2>
             <p className="text-gray-600 max-w-2xl mx-auto">
-              Enterprise-grade security meets seamless user experience. 
-              Build the next generation of Web3 applications.
+              Enterprise-grade security meets seamless user experience. Build
+              the next generation of Web3 applications.
             </p>
           </div>
 
@@ -101,7 +111,7 @@ export default function HomePage() {
                 PIN Protected
               </h3>
               <p className="text-gray-600 leading-relaxed">
-                Secure your wallet with a personal PIN. No seed phrases to 
+                Secure your wallet with a personal PIN. No seed phrases to
                 remember, no risk of losing access to your assets.
               </p>
             </div>
@@ -115,8 +125,8 @@ export default function HomePage() {
                 Gasless Transactions
               </h3>
               <p className="text-gray-600 leading-relaxed">
-                Smart Contract Accounts enable gasless transactions. 
-                Users don&apos;t need to hold native tokens to interact.
+                Smart Contract Accounts enable gasless transactions. Users
+                don&apos;t need to hold native tokens to interact.
               </p>
             </div>
 
@@ -129,8 +139,8 @@ export default function HomePage() {
                 Multi-Chain Support
               </h3>
               <p className="text-gray-600 leading-relaxed">
-                Deploy wallets across Ethereum, Polygon, Avalanche, 
-                Solana, and more. One account, multiple chains.
+                Deploy wallets across Ethereum, Polygon, Avalanche, Solana, and
+                more. One account, multiple chains.
               </p>
             </div>
           </div>
@@ -177,7 +187,7 @@ export default function HomePage() {
               Ready to Get Started?
             </h2>
             <p className="text-gray-600 mb-8 max-w-xl mx-auto">
-              Connect your wallet now and experience the seamless onboarding 
+              Connect your wallet now and experience the seamless onboarding
               that Circle Programmable Wallets provide.
             </p>
             <ConnectButton />

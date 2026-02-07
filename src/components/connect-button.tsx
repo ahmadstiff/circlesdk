@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
+import Image from "next/image";
 import {
   Wallet,
   LogOut,
@@ -35,6 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { cn, shortenAddress, formatBalance } from "@/lib/utils";
+import { useUserAddressActions } from "@/hooks/use-user-address";
 
 const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID as string;
 const ACCOUNT_TYPE = "SCA";
@@ -67,7 +69,7 @@ const BLOCKCHAIN_INFO: Record<
 > = {
   "ARC-TESTNET": {
     name: "ARC Testnet",
-    icon: "🔮",
+    icon: "/arc.jpg",
     color: "from-blue-600 to-blue-500",
   },
   "ETH-SEPOLIA": {
@@ -93,6 +95,7 @@ const BLOCKCHAIN_INFO: Record<
 };
 
 export function ConnectButton() {
+  const { invalidateUserAddress } = useUserAddressActions();
   const sdkRef = useRef<W3SSdk | null>(null);
 
   const [sdkReady, setSdkReady] = useState(false);
@@ -136,12 +139,14 @@ export function ConnectButton() {
         // If we have all session data, mark as connected
         if (savedUserId && savedUserToken && savedEncryptionKey && parsedWallets.length > 0) {
           setConnectionState("connected");
+          // Invalidate user address cache setelah restore session
+          void invalidateUserAddress();
         }
       } catch {
         // Invalid JSON, ignore
       }
     }
-  }, []);
+  }, [invalidateUserAddress]);
 
   // Initialize SDK on mount
   useEffect(() => {
@@ -435,6 +440,8 @@ export function ConnectButton() {
           if (existingWallets.length > 0) {
             setConnectionState("connected");
             setIsDialogOpen(false);
+            // Invalidate user address cache setelah login
+            await invalidateUserAddress();
             return;
           }
         }
@@ -483,6 +490,8 @@ export function ConnectButton() {
           );
           if (newWallets.length > 0) {
             setConnectionState("connected");
+            // Invalidate user address cache setelah register wallet
+            await invalidateUserAddress();
           } else {
             setConnectionState("disconnected");
             setError("Wallet creation pending. Please try again.");
@@ -497,7 +506,7 @@ export function ConnectButton() {
     }
   };
 
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
     clearSession();
     setUserId("");
     setLoginResult(null);
@@ -505,6 +514,8 @@ export function ConnectButton() {
     setUsdcBalance(null);
     setConnectionState("disconnected");
     setError(null);
+    // Invalidate user address cache setelah disconnect
+    await invalidateUserAddress();
   };
 
   const handleRefresh = async () => {
@@ -654,11 +665,21 @@ export function ConnectButton() {
             <div className="flex items-center gap-2 mt-2">
               <div
                 className={cn(
-                  "flex items-center justify-center h-8 w-8 rounded-lg bg-linear-to-br",
+                  "flex items-center justify-center h-8 w-8 rounded-lg bg-linear-to-br overflow-hidden",
                   chainInfo.color
                 )}
               >
-                <span className="text-sm">{chainInfo.icon}</span>
+                {chainInfo.icon.startsWith("http") || chainInfo.icon.startsWith("/") ? (
+                  <Image
+                    src={chainInfo.icon}
+                    alt={chainInfo.name}
+                    width={32}
+                    height={32}
+                    className="object-contain"
+                  />
+                ) : (
+                  <span className="text-sm">{chainInfo.icon}</span>
+                )}
               </div>
               <span className="font-medium text-gray-900">{chainInfo.name}</span>
               <Badge variant="success" className="ml-auto text-xs">
@@ -822,11 +843,21 @@ export function ConnectButton() {
             <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border-2 border-gray-200">
               <div
                 className={cn(
-                  "flex items-center justify-center h-10 w-10 rounded-lg bg-linear-to-br",
+                  "flex items-center justify-center h-10 w-10 rounded-lg bg-linear-to-br overflow-hidden",
                   chainInfo.color
                 )}
               >
-                <span className="text-lg">{chainInfo.icon}</span>
+                {chainInfo.icon.startsWith("http") || chainInfo.icon.startsWith("/") ? (
+                  <Image
+                    src={chainInfo.icon}
+                    alt={chainInfo.name}
+                    width={40}
+                    height={40}
+                    className="object-contain"
+                  />
+                ) : (
+                  <span className="text-lg">{chainInfo.icon}</span>
+                )}
               </div>
               <div>
                 <p className="font-medium text-gray-900">{chainInfo.name}</p>
