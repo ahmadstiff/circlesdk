@@ -1,532 +1,200 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
-
-const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID as string;
-const ACCOUNT_TYPE = "SCA";
-const PRIMARY_WALLET_BLOCKCHAIN = "ARC-TESTNET";
-
-type LoginResult = {
-  userToken: string;
-  encryptionKey: string;
-};
-
-type Wallet = {
-  id: string;
-  address: string;
-  blockchain: string;
-  [key: string]: unknown;
-};
+import { ConnectButton } from "@/components/connect-button";
+import { Github, Sparkles, Shield, Zap, Globe } from "lucide-react";
 
 export default function HomePage() {
-  const sdkRef = useRef<W3SSdk | null>(null);
-
-  const [sdkReady, setSdkReady] = useState(false);
-  const [deviceId, setDeviceId] = useState<string>("");
-
-  const [userId, setUserId] = useState<string>("");
-
-  const [loginResult, setLoginResult] = useState<LoginResult | null>(null);
-
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [usdcBalance, setUsdcBalance] = useState<string | null>(null);
-
-  const [status, setStatus] = useState<string>("Ready");
-  const [isError, setIsError] = useState<boolean>(false);
-
-  // Initialize SDK on mount
-  useEffect(() => {
-    let cancelled = false;
-
-    const initSdk = async () => {
-      try {
-        const sdk = new W3SSdk({
-          appSettings: { appId },
-        });
-
-        sdkRef.current = sdk;
-
-        if (!cancelled) {
-          setSdkReady(true);
-          setIsError(false);
-          setStatus("SDK initialized. Ready to create user.");
-        }
-      } catch (err) {
-        console.log("Failed to initialize Web SDK:", err);
-        if (!cancelled) {
-          setIsError(true);
-          setStatus("Failed to initialize Web SDK");
-        }
-      }
-    };
-
-    void initSdk();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Get / cache deviceId
-  useEffect(() => {
-    const fetchDeviceId = async () => {
-      if (!sdkRef.current) return;
-
-      try {
-        const cached =
-          typeof window !== "undefined"
-            ? window.localStorage.getItem("deviceId")
-            : null;
-
-        if (cached) {
-          setDeviceId(cached);
-          return;
-        }
-
-        const id = await sdkRef.current.getDeviceId();
-        setDeviceId(id);
-
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem("deviceId", id);
-        }
-      } catch (error) {
-        console.log("Failed to get deviceId:", error);
-        setIsError(true);
-        setStatus("Failed to get deviceId");
-      }
-    };
-
-    if (sdkReady) {
-      void fetchDeviceId();
-    }
-  }, [sdkReady]);
-
-  // Load USDC balance
-  async function loadUsdcBalance(userToken: string, walletId: string) {
-    try {
-      const response = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "getTokenBalance",
-          userToken,
-          walletId,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.log("Failed to load USDC balance:", data);
-        setIsError(true);
-        setStatus("Failed to load USDC balance");
-        return null;
-      }
-
-      const balances = (data.tokenBalances as any[]) || [];
-
-      const usdcEntry =
-        balances.find((t) => {
-          const symbol = t.token?.symbol || "";
-          const name = t.token?.name || "";
-          return symbol.startsWith("USDC") || name.includes("USDC");
-        }) ?? null;
-
-      const amount = usdcEntry?.amount ?? "0";
-      setUsdcBalance(amount);
-      // Note: loadWallets may overwrite this with a more specific status
-      setIsError(false);
-      setStatus("Wallet details and USDC balance loaded.");
-      return amount;
-    } catch (err) {
-      console.log("Failed to load USDC balance:", err);
-      setIsError(true);
-      setStatus("Failed to load USDC balance");
-      return null;
-    }
-  }
-
-  // Load wallets for current user
-  const loadWallets = async (
-    userToken: string,
-    options?: { source?: "afterCreate" | "alreadyInitialized" },
-  ) => {
-    try {
-      setIsError(false);
-      setStatus("Loading wallet details...");
-      setUsdcBalance(null);
-
-      const response = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "listWallets",
-          userToken,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.log("List wallets failed:", data);
-        setIsError(true);
-        setStatus("Failed to load wallet details");
-        return;
-      }
-
-      const wallets = (data.wallets as Wallet[]) || [];
-      setWallets(wallets);
-
-      if (wallets.length > 0) {
-        await loadUsdcBalance(userToken, wallets[0].id);
-
-        if (options?.source === "afterCreate") {
-          setIsError(false);
-          setStatus(
-            "Wallet created successfully! 🎉 Wallet details and USDC balance loaded.",
-          );
-        } else if (options?.source === "alreadyInitialized") {
-          setIsError(false);
-          setStatus(
-            "User already initialized. Wallet details and USDC balance loaded.",
-          );
-        }
-      } else {
-        setIsError(false);
-        setStatus("Wallet creation in progress. Click Initialize user again to refresh.");
-      }
-    } catch (err) {
-      console.log("Failed to load wallet details:", err);
-      setIsError(true);
-      setStatus("Failed to load wallet details");
-    }
-  };
-
-  const handleCreateUser = async () => {
-    if (!userId) {
-      setIsError(true);
-      setStatus("Please enter a user ID.");
-      return;
-    }
-
-    if (userId.length < 5) {
-      setIsError(true);
-      setStatus("User ID must be at least 5 characters.");
-      return;
-    }
-
-    // Reset auth + wallet state
-    setLoginResult(null);
-    setChallengeId(null);
-    setWallets([]);
-    setUsdcBalance(null);
-
-    try {
-      setIsError(false);
-      setStatus("Creating user...");
-
-      const response = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "createUser",
-          userId,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.log("Failed to create user:", data);
-        setIsError(data.code === 155106);
-        setStatus(data.error || data.message || "Failed to create user");
-        return;
-      }
-
-      setIsError(false);
-      setStatus("User created successfully! Click Get User Token to continue.");
-    } catch (err) {
-      console.log("Error creating user:", err);
-      setIsError(true);
-      setStatus("Failed to create user");
-    }
-  };
-
-  const handleGetUserToken = async () => {
-    if (!userId) {
-      setIsError(true);
-      setStatus("Please enter a user ID.");
-      return;
-    }
-
-    if (userId.length < 5) {
-      setIsError(true);
-      setStatus("User ID must be at least 5 characters.");
-      return;
-    }
-
-    try {
-      setIsError(false);
-      setStatus("Getting user token...");
-
-      const response = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "getUserToken",
-          userId,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.log("Failed to get user token:", data);
-        setIsError(true);
-        setStatus(data.error || data.message || "Failed to get user token");
-        return;
-      }
-
-      // Set loginResult with userToken and encryptionKey from response
-      setLoginResult({
-        userToken: data.userToken,
-        encryptionKey: data.encryptionKey,
-      });
-
-      setIsError(false);
-      setStatus("User token retrieved successfully! Click Initialize user to continue.");
-    } catch (err) {
-      console.log("Error getting user token:", err);
-      setIsError(true);
-      setStatus("Failed to get user token");
-    }
-  };
-
-  const handleInitializeUser = async () => {
-    if (!loginResult?.userToken) {
-      setIsError(true);
-      setStatus("Missing userToken. Please get user token first.");
-      return;
-    }
-
-    try {
-      setIsError(false);
-      setStatus("Initializing user...");
-
-      const response = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "initializeUser",
-          userToken: loginResult.userToken,
-          accountType: ACCOUNT_TYPE,
-          blockchains: [PRIMARY_WALLET_BLOCKCHAIN],
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (data.code === 155106) {
-          await loadWallets(loginResult.userToken, {
-            source: "alreadyInitialized",
-          });
-          setChallengeId(null);
-          return;
-        }
-
-        const errorMsg = data.code
-          ? `[${data.code}] ${data.error || data.message}`
-          : data.error || data.message;
-        setIsError(true);
-        setStatus("Failed to initialize user: " + errorMsg);
-        return;
-      }
-
-      setChallengeId(data.challengeId);
-      setIsError(false);
-      setStatus(`User initialized. Click Create wallet to continue.`);
-    } catch (err: any) {
-      if (err?.code === 155106 && loginResult?.userToken) {
-        await loadWallets(loginResult.userToken, {
-          source: "alreadyInitialized",
-        });
-        setChallengeId(null);
-        return;
-      }
-
-      const errorMsg = err?.code
-        ? `[${err.code}] ${err.message}`
-        : err?.message || "Unknown error";
-      setIsError(true);
-      setStatus("Failed to initialize user: " + errorMsg);
-    }
-  };
-
-  const handleExecuteChallenge = async () => {
-    const sdk = sdkRef.current;
-    if (!sdk) {
-      setIsError(true);
-      setStatus("SDK not ready");
-      return;
-    }
-
-    if (!challengeId) {
-      setIsError(true);
-      setStatus("Missing challengeId. Initialize user first.");
-      return;
-    }
-
-    if (!loginResult?.userToken || !loginResult?.encryptionKey) {
-      setIsError(true);
-      setStatus("Missing login credentials. Please get user token again.");
-      return;
-    }
-
-    try {
-      sdk.setAuthentication({
-        userToken: loginResult.userToken,
-        encryptionKey: loginResult.encryptionKey,
-      });
-
-      setIsError(false);
-      setStatus("Executing challenge...");
-
-      await sdk.execute(challengeId, (error, result) => {
-        if (error) {
-          console.log("Execute challenge failed:", error);
-          setIsError(true);
-          setStatus(
-            "Failed to execute challenge: " +
-              ((error as any)?.message ?? "Unknown error"),
-          );
-          return;
-        }
-
-        console.log("Challenge executed successfully:", result);
-        setChallengeId(null);
-
-        // Small delay to give Circle time to index the wallet
-        setTimeout(async () => {
-          if (loginResult?.userToken) {
-            await loadWallets(loginResult.userToken, { source: "afterCreate" });
-          }
-        }, 2000);
-      });
-    } catch (err) {
-      console.log("Execute challenge error:", err);
-      setIsError(true);
-      setStatus(
-        "Failed to execute challenge: " +
-          ((err as any)?.message ?? "Unknown error"),
-      );
-    }
-  };
-
-  const primaryWallet = wallets[0];
-
   return (
-    <main>
-      <div style={{ width: "50%", margin: "0 auto" }}>
-        <h1>Create a user wallet using PIN</h1>
-        <p>Enter the username or email of the user you want to create a wallet for:</p>
-
-        <div style={{ marginBottom: "12px" }}>
-          <label>
-            User ID:
-            <input
-              type="text"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              style={{ marginLeft: "8px", width: "70%" }}
-              placeholder="Enter user ID (min 5 chars)"
-              minLength={5}
-            />
-          </label>
-        </div>
-
-        <div>
-          <button
-            onClick={handleCreateUser}
-            style={{ margin: "6px" }}
-            disabled={!userId || userId.length < 5}
-          >
-            1. Create User
-          </button>
-          <br />
-          <button
-            onClick={handleGetUserToken}
-            style={{ margin: "6px" }}
-            disabled={!userId || userId.length < 5 || !!loginResult}
-          >
-            2. Get User Token
-          </button>
-          <br />
-          <button
-            onClick={handleInitializeUser}
-            style={{ margin: "6px" }}
-            disabled={!loginResult || !!challengeId || wallets.length > 0}
-          >
-            3. Initialize user (get challenge)
-          </button>
-          <br />
-          <button
-            onClick={handleExecuteChallenge}
-            style={{ margin: "6px" }}
-            disabled={!challengeId || wallets.length > 0}
-          >
-            4. Create wallet (execute challenge)
-          </button>
-        </div>
-
-        <p>
-          <strong>Status:</strong>{" "}
-          <span style={{ color: isError ? "red" : "black" }}>{status}</span>
-        </p>
-
-        {primaryWallet && (
-          <div style={{ marginTop: "12px" }}>
-            <h2>Wallet details</h2>
-            <p>
-              <strong>Address:</strong> {primaryWallet.address}
-            </p>
-            <p>
-              <strong>Blockchain:</strong> {primaryWallet.blockchain}
-            </p>
-            {usdcBalance !== null && (
-              <p>
-                <strong>USDC balance:</strong> {usdcBalance}
-              </p>
-            )}
+    <main className="min-h-screen">
+      {/* Header */}
+      <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-white/80 border-b border-gray-200/50">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-blue-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
+              <Sparkles className="h-5 w-5 text-white" />
+            </div>
+            <span className="text-xl font-bold gradient-text-blue">CircleSDK</span>
           </div>
-        )}
 
-        <pre
-          style={{
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
-            lineHeight: "1.8",
-            marginTop: "16px",
-          }}
-        >
-          {JSON.stringify(
-            {
-              deviceId,
-              userId,
-              userToken: loginResult?.userToken,
-              encryptionKey: loginResult?.encryptionKey,
-              challengeId,
-              wallets,
-              usdcBalance,
-            },
-            null,
-            2,
-          )}
-        </pre>
-      </div>
+          <nav className="hidden md:flex items-center gap-8">
+            <a href="#features" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+              Features
+            </a>
+            <a href="#docs" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+              Documentation
+            </a>
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-gray-600 hover:text-blue-600 transition-colors flex items-center gap-1"
+            >
+              <Github className="h-4 w-4" />
+              GitHub
+            </a>
+          </nav>
+
+          <ConnectButton />
+        </div>
+      </header>
+
+      {/* Hero Section */}
+      <section className="pt-32 pb-20 px-6 bg-gradient-to-b from-blue-50/50 to-white">
+        <div className="max-w-4xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-100 border border-blue-200 mb-8">
+            <Sparkles className="h-4 w-4 text-blue-600" />
+            <span className="text-sm text-blue-700 font-medium">
+              Powered by Circle Web3 Services
+            </span>
+          </div>
+
+          <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
+            <span className="gradient-text-blue">Programmable Wallets</span>
+            <br />
+            <span className="text-gray-900">Made Simple</span>
+          </h1>
+
+          <p className="text-xl text-gray-600 mb-10 max-w-2xl mx-auto leading-relaxed">
+            Create and manage secure wallets with just a few clicks. 
+            Experience the future of Web3 onboarding with Circle&apos;s 
+            gasless, PIN-protected smart contract accounts.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <ConnectButton />
+            <a
+              href="https://developers.circle.com/w3s/docs"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border-2 border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300 transition-all font-medium"
+            >
+              View Documentation
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* Features Section */}
+      <section id="features" className="py-20 px-6 bg-white">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+              Why Choose Circle Wallets?
+            </h2>
+            <p className="text-gray-600 max-w-2xl mx-auto">
+              Enterprise-grade security meets seamless user experience. 
+              Build the next generation of Web3 applications.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {/* Feature 1 */}
+            <div className="group p-6 rounded-2xl bg-white border-2 border-gray-200 hover:border-blue-300 hover:shadow-xl transition-all duration-300">
+              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-600 to-blue-500 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/25">
+                <Shield className="h-6 w-6 text-white" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                PIN Protected
+              </h3>
+              <p className="text-gray-600 leading-relaxed">
+                Secure your wallet with a personal PIN. No seed phrases to 
+                remember, no risk of losing access to your assets.
+              </p>
+            </div>
+
+            {/* Feature 2 */}
+            <div className="group p-6 rounded-2xl bg-white border-2 border-gray-200 hover:border-blue-300 hover:shadow-xl transition-all duration-300">
+              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-600 to-blue-500 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/25">
+                <Zap className="h-6 w-6 text-white" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                Gasless Transactions
+              </h3>
+              <p className="text-gray-600 leading-relaxed">
+                Smart Contract Accounts enable gasless transactions. 
+                Users don&apos;t need to hold native tokens to interact.
+              </p>
+            </div>
+
+            {/* Feature 3 */}
+            <div className="group p-6 rounded-2xl bg-white border-2 border-gray-200 hover:border-blue-300 hover:shadow-xl transition-all duration-300">
+              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-600 to-blue-500 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/25">
+                <Globe className="h-6 w-6 text-white" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                Multi-Chain Support
+              </h3>
+              <p className="text-gray-600 leading-relaxed">
+                Deploy wallets across Ethereum, Polygon, Avalanche, 
+                Solana, and more. One account, multiple chains.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Stats Section */}
+      <section className="py-16 px-6 border-y border-gray-200 bg-gradient-to-b from-white to-blue-50/30">
+        <div className="max-w-6xl mx-auto">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+            <div className="text-center">
+              <div className="text-4xl md:text-5xl font-bold gradient-text-blue mb-2">
+                $10B+
+              </div>
+              <div className="text-gray-600 text-sm">Total Volume</div>
+            </div>
+            <div className="text-center">
+              <div className="text-4xl md:text-5xl font-bold gradient-text-blue mb-2">
+                50M+
+              </div>
+              <div className="text-gray-600 text-sm">Transactions</div>
+            </div>
+            <div className="text-center">
+              <div className="text-4xl md:text-5xl font-bold gradient-text-blue mb-2">
+                190+
+              </div>
+              <div className="text-gray-600 text-sm">Countries</div>
+            </div>
+            <div className="text-center">
+              <div className="text-4xl md:text-5xl font-bold gradient-text-blue mb-2">
+                99.9%
+              </div>
+              <div className="text-gray-600 text-sm">Uptime</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="py-20 px-6 bg-white">
+        <div className="max-w-4xl mx-auto text-center">
+          <div className="p-8 md:p-12 rounded-3xl bg-gradient-to-br from-blue-50 to-blue-100/50 border-2 border-blue-200">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+              Ready to Get Started?
+            </h2>
+            <p className="text-gray-600 mb-8 max-w-xl mx-auto">
+              Connect your wallet now and experience the seamless onboarding 
+              that Circle Programmable Wallets provide.
+            </p>
+            <ConnectButton />
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="py-8 px-6 border-t border-gray-200 bg-gray-50">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
+              <Sparkles className="h-4 w-4 text-white" />
+            </div>
+            <span className="font-semibold text-gray-700">CircleSDK Demo</span>
+          </div>
+          <div className="text-sm text-gray-500">
+            Built with Circle Web3 Services • {new Date().getFullYear()}
+          </div>
+        </div>
+      </footer>
     </main>
   );
 }
