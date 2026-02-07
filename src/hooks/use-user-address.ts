@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useConnection } from "wagmi";
+import { useCircleWallet } from "@/contexts/circle-wallet-context";
 import type { Address } from "viem";
 import { useCallback } from "react";
 
@@ -11,22 +11,22 @@ export const userAddressQueryKeys = {
 };
 
 export function useUserAddress() {
-  const { address, isConnected, isConnecting, status, chain, chainId } =
-    useConnection();
+  const { address, isConnected, connectionState, blockchain } =
+    useCircleWallet();
 
-  const query = useQuery({
-    queryKey: userAddressQueryKeys.address(address),
+  // Keep query for cache invalidation support, even though data is reactive from Circle SDK
+  useQuery({
+    queryKey: userAddressQueryKeys.address(address ?? undefined),
     queryFn: () => {
       return {
         address: address || null,
         isConnected,
-        chain,
-        chainId,
-        status,
+        connectionState,
+        blockchain,
       };
     },
     enabled: true,
-    staleTime: Infinity, // Data sudah reactive dari wagmi, tidak perlu refetch otomatis
+    staleTime: Infinity, // Data sudah reactive dari Circle SDK, tidak perlu refetch otomatis
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false, // Tidak refetch saat window focus
     refetchOnMount: false, // Tidak refetch saat component mount
@@ -36,11 +36,13 @@ export function useUserAddress() {
   return {
     address: address || null,
     isConnected,
-    isConnecting,
-    isLoading: query.isLoading || isConnecting,
-    status,
-    chain,
-    chainId,
+    connectionState,
+    blockchain,
+    isLoading:
+      connectionState === "connecting" ||
+      connectionState === "creating-wallet" ||
+      connectionState === "getting-token" ||
+      connectionState === "initializing",
   };
 }
 

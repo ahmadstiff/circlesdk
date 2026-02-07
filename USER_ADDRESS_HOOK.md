@@ -1,18 +1,18 @@
 # User Address Hook Documentation
 
-Hook untuk membaca user address dari wagmi dengan React Query untuk caching dan invalidation.
+Hook untuk membaca user address langsung dari Circle SDK dengan React Query untuk caching dan invalidation.
 
 ## File Location
 - Hook: `src/hooks/use-user-address.ts`
-- Example: `src/app/user-address-example/page.tsx`
 
 ## Features
 
-✅ Membaca address dari wagmi `useAccount`  
+✅ Membaca address langsung dari Circle SDK (bukan dari wagmi)  
 ✅ Built-in caching dengan React Query  
 ✅ Query keys untuk easy invalidation  
 ✅ Helper functions untuk refetch dan reset  
 ✅ TypeScript support  
+✅ Reactive data - auto update saat connection berubah  
 
 ## Basic Usage
 
@@ -51,20 +51,19 @@ function TransactionComponent() {
 }
 ```
 
-### 3. Mengakses Chain Information
+### 3. Mengakses Blockchain Information
 
 ```typescript
 import { useUserAddress } from "@/hooks/use-user-address";
 
 function MyComponent() {
-  const { address, chain, chainId, status } = useUserAddress();
+  const { address, blockchain, connectionState } = useUserAddress();
 
   return (
     <div>
       <div>Address: {address}</div>
-      <div>Chain: {chain?.name}</div>
-      <div>Chain ID: {chainId}</div>
-      <div>Status: {status}</div>
+      <div>Blockchain: {blockchain}</div>
+      <div>State: {connectionState}</div>
     </div>
   );
 }
@@ -106,14 +105,13 @@ Hook utama untuk membaca user address.
 **Returns:**
 ```typescript
 {
-  address: Address | null;       // User wallet address
+  address: Address | null;       // User wallet address dari Circle SDK
   isConnected: boolean;           // Connection status
-  isConnecting: boolean;          // Connecting status
-  isLoading: boolean;             // Loading status (query + connection)
-  status: string;                 // Connection status detail
-  chain: Chain | undefined;       // Current chain info
-  chainId: number | undefined;    // Current chain ID
+  connectionState: string;        // Detailed connection state (connecting, connected, etc)
+  blockchain: string | null;      // Blockchain name (e.g., "ARC-TESTNET")
+  isLoading: boolean;             // Loading status (connecting/creating wallet)
 }
+```
 ```
 
 ### `useUserAddressActions()`
@@ -222,9 +220,10 @@ test("renders user address", () => {
 
 ## Notes
 
-- Hook ini bergantung pada wagmi's `useConnection` hook (bukan `useAccount`)
+- Hook ini menggunakan `useCircleWallet` langsung dari Circle SDK context (bukan dari wagmi)
 - Memerlukan `QueryClientProvider` dari `@tanstack/react-query`
-- Otomatis update ketika wallet connection berubah
+- Otomatis update ketika Circle wallet connection berubah
 - Cache invalidation berguna setelah transaksi atau perubahan state wallet
 - **Tidak ada `refetch` function** - gunakan `invalidateUserAddress()` untuk refresh data
 - Auto-invalidation sudah ditambahkan di ConnectButton saat login/register/disconnect
+- Data reactive langsung dari Circle SDK - lebih simple dan direct tanpa perlu sync wagmi
