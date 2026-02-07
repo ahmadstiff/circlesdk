@@ -96,16 +96,15 @@ export function ConnectButton() {
   const sdkRef = useRef<W3SSdk | null>(null);
 
   const [sdkReady, setSdkReady] = useState(false);
-  const [deviceId, setDeviceId] = useState<string>("");
   const [userId, setUserId] = useState<string>("");
   const [loginResult, setLoginResult] = useState<LoginResult | null>(null);
-  const [challengeId, setChallengeId] = useState<string | null>(null);
   const [wallets, setWallets] = useState<WalletData[]>([]);
   const [usdcBalance, setUsdcBalance] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedUserId, setCopiedUserId] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [mode, setMode] = useState<"create" | "login">("create");
   const [mounted, setMounted] = useState(false);
@@ -186,12 +185,10 @@ export function ConnectButton() {
             : null;
 
         if (cached) {
-          setDeviceId(cached);
           return;
         }
 
         const id = await sdkRef.current.getDeviceId();
-        setDeviceId(id);
 
         if (typeof window !== "undefined") {
           window.localStorage.setItem("deviceId", id);
@@ -449,7 +446,6 @@ export function ConnectButton() {
       }
 
       // Step 4: Execute Challenge (Create Wallet)
-      setChallengeId(initData.challengeId);
       setConnectionState("creating-wallet");
 
       const sdk = sdkRef.current;
@@ -477,7 +473,6 @@ export function ConnectButton() {
         }
 
         console.log("Challenge executed successfully:", result);
-        setChallengeId(null);
 
         // Give Circle time to index the wallet
         setTimeout(async () => {
@@ -506,7 +501,6 @@ export function ConnectButton() {
     clearSession();
     setUserId("");
     setLoginResult(null);
-    setChallengeId(null);
     setWallets([]);
     setUsdcBalance(null);
     setConnectionState("disconnected");
@@ -526,6 +520,14 @@ export function ConnectButton() {
       navigator.clipboard.writeText(wallets[0].address);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const copyUserId = () => {
+    if (userId) {
+      navigator.clipboard.writeText(userId);
+      setCopiedUserId(true);
+      setTimeout(() => setCopiedUserId(false), 2000);
     }
   };
 
@@ -652,7 +654,7 @@ export function ConnectButton() {
             <div className="flex items-center gap-2 mt-2">
               <div
                 className={cn(
-                  "flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br",
+                  "flex items-center justify-center h-8 w-8 rounded-lg bg-linear-to-br",
                   chainInfo.color
                 )}
               >
@@ -666,6 +668,19 @@ export function ConnectButton() {
           </div>
 
           <DropdownMenuSeparator />
+
+          {/* User ID */}
+          <DropdownMenuItem
+            className="gap-2 cursor-pointer"
+            onClick={copyUserId}
+          >
+            {copiedUserId ? (
+              <Check className="h-4 w-4 text-emerald-500" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            )}
+            <span>{copiedUserId ? "Copied!" : "Copy User ID"}</span>
+          </DropdownMenuItem>
 
           {/* Wallet Address */}
           <DropdownMenuItem
@@ -682,7 +697,7 @@ export function ConnectButton() {
 
           <DropdownMenuItem className="gap-2 cursor-pointer" asChild>
             <a
-              href={`https://explorer.circle.com/address/${primaryWallet.address}`}
+              href={`https://testnet.arcscan.app/address/${primaryWallet.address}`}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -717,7 +732,7 @@ export function ConnectButton() {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-blue-500">
+            <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-linear-to-br from-blue-600 to-blue-500">
               <Wallet className="h-5 w-5 text-white" />
             </div>
             Connect Your Wallet
@@ -807,7 +822,7 @@ export function ConnectButton() {
             <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border-2 border-gray-200">
               <div
                 className={cn(
-                  "flex items-center justify-center h-10 w-10 rounded-lg bg-gradient-to-br",
+                  "flex items-center justify-center h-10 w-10 rounded-lg bg-linear-to-br",
                   chainInfo.color
                 )}
               >

@@ -1,533 +1,284 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-// app/page.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
+import { useState } from "react";
+import { useTransferFrom } from "@/hooks/use-transfer-from";
+import { abi } from "./abi";
+import { useConnection } from "wagmi";
+import {
+  Loader2,
+  CheckCircle,
+  XCircle,
+  ExternalLink,
+  AlertCircle,
+} from "lucide-react";
 
-const appId = process.env.NEXT_PUBLIC_CIRCLE_APP_ID as string;
-const ACCOUNT_TYPE = "SCA";
-const PRIMARY_WALLET_BLOCKCHAIN = "ARC-TESTNET";
+export default function TransferFromPage() {
+  const { address, isConnected } = useConnection();
+  const {
+    status,
+    mutation,
+    txHash,
+    error,
+    reset,
+    isLoading,
+    isSuccess,
+    isError,
+  } = useTransferFrom();
 
-type LoginResult = {
-  userToken: string;
-  encryptionKey: string;
-};
+  // Form state
+  const [tokenAddress, setTokenAddress] = useState(
+    "0x6b175474e89094c44da98b954eedeac495271d0f",
+  );
+  const [fromAddress, setFromAddress] = useState(
+    "0xd2135CfB216b74109775236E36d4b433F1DF507B",
+  );
+  const [toAddress, setToAddress] = useState(
+    "0xA0Cf798816D4b9b9866b5330EEa46a18382f251e",
+  );
+  const [amount, setAmount] = useState("123");
 
-type Wallet = {
-  id: string;
-  address: string;
-  blockchain: string;
-  [key: string]: unknown;
-};
-
-export default function HomePage() {
-  const sdkRef = useRef<W3SSdk | null>(null);
-
-  const [sdkReady, setSdkReady] = useState(false);
-  const [deviceId, setDeviceId] = useState<string>("");
-
-  const [userId, setUserId] = useState<string>("");
-
-  const [loginResult, setLoginResult] = useState<LoginResult | null>(null);
-
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [usdcBalance, setUsdcBalance] = useState<string | null>(null);
-
-  const [status, setStatus] = useState<string>("Ready");
-  const [isError, setIsError] = useState<boolean>(false);
-
-  // Initialize SDK on mount
-  useEffect(() => {
-    let cancelled = false;
-
-    const initSdk = async () => {
-      try {
-        const sdk = new W3SSdk({
-          appSettings: { appId },
-        });
-
-        sdkRef.current = sdk;
-
-        if (!cancelled) {
-          setSdkReady(true);
-          setIsError(false);
-          setStatus("SDK initialized. Ready to create user.");
-        }
-      } catch (err) {
-        console.log("Failed to initialize Web SDK:", err);
-        if (!cancelled) {
-          setIsError(true);
-          setStatus("Failed to initialize Web SDK");
-        }
-      }
-    };
-
-    void initSdk();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Get / cache deviceId
-  useEffect(() => {
-    const fetchDeviceId = async () => {
-      if (!sdkRef.current) return;
-
-      try {
-        const cached =
-          typeof window !== "undefined"
-            ? window.localStorage.getItem("deviceId")
-            : null;
-
-        if (cached) {
-          setDeviceId(cached);
-          return;
-        }
-
-        const id = await sdkRef.current.getDeviceId();
-        setDeviceId(id);
-
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem("deviceId", id);
-        }
-      } catch (error) {
-        console.log("Failed to get deviceId:", error);
-        setIsError(true);
-        setStatus("Failed to get deviceId");
-      }
-    };
-
-    if (sdkReady) {
-      void fetchDeviceId();
-    }
-  }, [sdkReady]);
-
-  // Load USDC balance
-  async function loadUsdcBalance(userToken: string, walletId: string) {
-    try {
-      const response = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "getTokenBalance",
-          userToken,
-          walletId,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.log("Failed to load USDC balance:", data);
-        setIsError(true);
-        setStatus("Failed to load USDC balance");
-        return null;
-      }
-
-      const balances = (data.tokenBalances as any[]) || [];
-
-      const usdcEntry =
-        balances.find((t) => {
-          const symbol = t.token?.symbol || "";
-          const name = t.token?.name || "";
-          return symbol.startsWith("USDC") || name.includes("USDC");
-        }) ?? null;
-
-      const amount = usdcEntry?.amount ?? "0";
-      setUsdcBalance(amount);
-      // Note: loadWallets may overwrite this with a more specific status
-      setIsError(false);
-      setStatus("Wallet details and USDC balance loaded.");
-      return amount;
-    } catch (err) {
-      console.log("Failed to load USDC balance:", err);
-      setIsError(true);
-      setStatus("Failed to load USDC balance");
-      return null;
-    }
-  }
-
-  // Load wallets for current user
-  const loadWallets = async (
-    userToken: string,
-    options?: { source?: "afterCreate" | "alreadyInitialized" },
-  ) => {
-    try {
-      setIsError(false);
-      setStatus("Loading wallet details...");
-      setUsdcBalance(null);
-
-      const response = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "listWallets",
-          userToken,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.log("List wallets failed:", data);
-        setIsError(true);
-        setStatus("Failed to load wallet details");
-        return;
-      }
-
-      const wallets = (data.wallets as Wallet[]) || [];
-      setWallets(wallets);
-
-      if (wallets.length > 0) {
-        await loadUsdcBalance(userToken, wallets[0].id);
-
-        if (options?.source === "afterCreate") {
-          setIsError(false);
-          setStatus(
-            "Wallet created successfully! 🎉 Wallet details and USDC balance loaded.",
-          );
-        } else if (options?.source === "alreadyInitialized") {
-          setIsError(false);
-          setStatus(
-            "User already initialized. Wallet details and USDC balance loaded.",
-          );
-        }
-      } else {
-        setIsError(false);
-        setStatus("Wallet creation in progress. Click Initialize user again to refresh.");
-      }
-    } catch (err) {
-      console.log("Failed to load wallet details:", err);
-      setIsError(true);
-      setStatus("Failed to load wallet details");
-    }
+  const handleTransfer = () => {
+    mutation.mutate({
+      tokenAddress: tokenAddress as `0x${string}`,
+      from: fromAddress as `0x${string}`,
+      to: toAddress as `0x${string}`,
+      amount: BigInt(amount),
+      abi: abi,
+    });
   };
 
-  const handleCreateUser = async () => {
-    if (!userId) {
-      setIsError(true);
-      setStatus("Please enter a user ID.");
-      return;
-    }
-
-    if (userId.length < 5) {
-      setIsError(true);
-      setStatus("User ID must be at least 5 characters.");
-      return;
-    }
-
-    // Reset auth + wallet state
-    setLoginResult(null);
-    setChallengeId(null);
-    setWallets([]);
-    setUsdcBalance(null);
-
-    try {
-      setIsError(false);
-      setStatus("Creating user...");
-
-      const response = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "createUser",
-          userId,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.log("Failed to create user:", data);
-        setIsError(data.code === 155106);
-        setStatus(data.error || data.message || "Failed to create user");
-        return;
-      }
-
-      setIsError(false);
-      setStatus("User created successfully! Click Get User Token to continue.");
-    } catch (err) {
-      console.log("Error creating user:", err);
-      setIsError(true);
-      setStatus("Failed to create user");
-    }
+  const getExplorerUrl = (hash: string) => {
+    return `https://testnet.arcscan.app/tx/${hash}`;
   };
-
-  const handleGetUserToken = async () => {
-    if (!userId) {
-      setIsError(true);
-      setStatus("Please enter a user ID.");
-      return;
-    }
-
-    if (userId.length < 5) {
-      setIsError(true);
-      setStatus("User ID must be at least 5 characters.");
-      return;
-    }
-
-    try {
-      setIsError(false);
-      setStatus("Getting user token...");
-
-      const response = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "getUserToken",
-          userId,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.log("Failed to get user token:", data);
-        setIsError(true);
-        setStatus(data.error || data.message || "Failed to get user token");
-        return;
-      }
-
-      // Set loginResult with userToken and encryptionKey from response
-      setLoginResult({
-        userToken: data.userToken,
-        encryptionKey: data.encryptionKey,
-      });
-
-      setIsError(false);
-      setStatus("User token retrieved successfully! Click Initialize user to continue.");
-    } catch (err) {
-      console.log("Error getting user token:", err);
-      setIsError(true);
-      setStatus("Failed to get user token");
-    }
-  };
-
-  const handleInitializeUser = async () => {
-    if (!loginResult?.userToken) {
-      setIsError(true);
-      setStatus("Missing userToken. Please get user token first.");
-      return;
-    }
-
-    try {
-      setIsError(false);
-      setStatus("Initializing user...");
-
-      const response = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "initializeUser",
-          userToken: loginResult.userToken,
-          accountType: ACCOUNT_TYPE,
-          blockchains: [PRIMARY_WALLET_BLOCKCHAIN],
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (data.code === 155106) {
-          await loadWallets(loginResult.userToken, {
-            source: "alreadyInitialized",
-          });
-          setChallengeId(null);
-          return;
-        }
-
-        const errorMsg = data.code
-          ? `[${data.code}] ${data.error || data.message}`
-          : data.error || data.message;
-        setIsError(true);
-        setStatus("Failed to initialize user: " + errorMsg);
-        return;
-      }
-
-      setChallengeId(data.challengeId);
-      setIsError(false);
-      setStatus(`User initialized. Click Create wallet to continue.`);
-    } catch (err: any) {
-      if (err?.code === 155106 && loginResult?.userToken) {
-        await loadWallets(loginResult.userToken, {
-          source: "alreadyInitialized",
-        });
-        setChallengeId(null);
-        return;
-      }
-
-      const errorMsg = err?.code
-        ? `[${err.code}] ${err.message}`
-        : err?.message || "Unknown error";
-      setIsError(true);
-      setStatus("Failed to initialize user: " + errorMsg);
-    }
-  };
-
-  const handleExecuteChallenge = async () => {
-    const sdk = sdkRef.current;
-    if (!sdk) {
-      setIsError(true);
-      setStatus("SDK not ready");
-      return;
-    }
-
-    if (!challengeId) {
-      setIsError(true);
-      setStatus("Missing challengeId. Initialize user first.");
-      return;
-    }
-
-    if (!loginResult?.userToken || !loginResult?.encryptionKey) {
-      setIsError(true);
-      setStatus("Missing login credentials. Please get user token again.");
-      return;
-    }
-
-    try {
-      sdk.setAuthentication({
-        userToken: loginResult.userToken,
-        encryptionKey: loginResult.encryptionKey,
-      });
-
-      setIsError(false);
-      setStatus("Executing challenge...");
-
-      await sdk.execute(challengeId, (error, result) => {
-        if (error) {
-          console.log("Execute challenge failed:", error);
-          setIsError(true);
-          setStatus(
-            "Failed to execute challenge: " +
-              ((error as any)?.message ?? "Unknown error"),
-          );
-          return;
-        }
-
-        console.log("Challenge executed successfully:", result);
-        setChallengeId(null);
-
-        // Small delay to give Circle time to index the wallet
-        setTimeout(async () => {
-          if (loginResult?.userToken) {
-            await loadWallets(loginResult.userToken, { source: "afterCreate" });
-          }
-        }, 2000);
-      });
-    } catch (err) {
-      console.log("Execute challenge error:", err);
-      setIsError(true);
-      setStatus(
-        "Failed to execute challenge: " +
-          ((err as any)?.message ?? "Unknown error"),
-      );
-    }
-  };
-
-  const primaryWallet = wallets[0];
 
   return (
-    <main>
-      <div style={{ width: "50%", margin: "0 auto" }}>
-        <h1>Create a user wallet using PIN</h1>
-        <p>Enter the username or email of the user you want to create a wallet for:</p>
-
-        <div style={{ marginBottom: "12px" }}>
-          <label>
-            User ID:
-            <input
-              type="text"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              style={{ marginLeft: "8px", width: "70%" }}
-              placeholder="Enter user ID (min 5 chars)"
-              minLength={5}
-            />
-          </label>
-        </div>
-
-        <div>
-          <button
-            onClick={handleCreateUser}
-            style={{ margin: "6px" }}
-            disabled={!userId || userId.length < 5}
-          >
-            1. Create User
-          </button>
-          <br />
-          <button
-            onClick={handleGetUserToken}
-            style={{ margin: "6px" }}
-            disabled={!userId || userId.length < 5 || !!loginResult}
-          >
-            2. Get User Token
-          </button>
-          <br />
-          <button
-            onClick={handleInitializeUser}
-            style={{ margin: "6px" }}
-            disabled={!loginResult || !!challengeId || wallets.length > 0}
-          >
-            3. Initialize user (get challenge)
-          </button>
-          <br />
-          <button
-            onClick={handleExecuteChallenge}
-            style={{ margin: "6px" }}
-            disabled={!challengeId || wallets.length > 0}
-          >
-            4. Create wallet (execute challenge)
-          </button>
-        </div>
-
-        <p>
-          <strong>Status:</strong>{" "}
-          <span style={{ color: isError ? "red" : "black" }}>{status}</span>
-        </p>
-
-        {primaryWallet && (
-          <div style={{ marginTop: "12px" }}>
-            <h2>Wallet details</h2>
-            <p>
-              <strong>Address:</strong> {primaryWallet.address}
+    <div className="min-h-screen bg-gray-50 p-8">
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white rounded-2xl shadow-lg p-8">
+          {/* Header */}
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              TransferFrom Test
+            </h1>
+            <p className="text-gray-600">
+              Test Circle wallet integration dengan complete flow
             </p>
-            <p>
-              <strong>Blockchain:</strong> {primaryWallet.blockchain}
-            </p>
-            {usdcBalance !== null && (
-              <p>
-                <strong>USDC balance:</strong> {usdcBalance}
-              </p>
+          </div>
+
+          {/* Connection Status */}
+          <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+            <div className="flex items-center gap-2">
+              <div
+                className={`h-2 w-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"}`}
+              />
+              <span className="text-sm font-medium text-gray-700">
+                {isConnected
+                  ? `Connected: ${address?.slice(0, 6)}...${address?.slice(-4)}`
+                  : "Not connected"}
+              </span>
+            </div>
+          </div>
+
+          {/* Form */}
+          <div className="space-y-4 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Token Address
+              </label>
+              <input
+                type="text"
+                value={tokenAddress}
+                onChange={(e) => setTokenAddress(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="0x..."
+                disabled={isLoading}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                From Address
+              </label>
+              <input
+                type="text"
+                value={fromAddress}
+                onChange={(e) => setFromAddress(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="0x..."
+                disabled={isLoading}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                To Address
+              </label>
+              <input
+                type="text"
+                value={toAddress}
+                onChange={(e) => setToAddress(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="0x..."
+                disabled={isLoading}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Amount
+              </label>
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="123"
+                disabled={isLoading}
+              />
+            </div>
+          </div>
+
+          {/* Action Button */}
+          <button
+            onClick={handleTransfer}
+            disabled={!isConnected || isLoading}
+            className="w-full py-3 px-6 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              "Transfer"
+            )}
+          </button>
+
+          {/* Status Display */}
+          <div className="mt-8">
+            {/* Loading State */}
+            {isLoading && (
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-start gap-3">
+                  <Loader2 className="h-5 w-5 text-blue-600 animate-spin mt-0.5" />
+                  <div>
+                    <h3 className="font-semibold text-blue-900 mb-1">
+                      Processing Transaction
+                    </h3>
+                    <p className="text-sm text-blue-700">
+                      Please sign the transaction with your PIN...
+                    </p>
+                    <p className="text-xs text-blue-600 mt-2">
+                      Status: <span className="font-mono">{status}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Success State */}
+            {isSuccess && (
+              <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-green-900 mb-1">
+                      Transaction Successful!
+                    </h3>
+                    <p className="text-sm text-green-700 mb-3">
+                      Your transfer has been confirmed on the blockchain
+                    </p>
+                    {txHash && (
+                      <a
+                        href={getExplorerUrl(txHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-sm text-green-700 hover:text-green-800 font-medium"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        View on Explorer
+                      </a>
+                    )}
+                    {txHash && (
+                      <p className="text-xs text-green-600 mt-2 font-mono break-all">
+                        TX: {txHash}
+                      </p>
+                    )}
+                    <button
+                      onClick={reset}
+                      className="mt-3 text-sm text-green-700 hover:text-green-800 font-medium"
+                    >
+                      Make another transfer
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Error State */}
+            {isError && (
+              <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                <div className="flex items-start gap-3">
+                  <XCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-red-900 mb-1">
+                      Transaction Failed
+                    </h3>
+                    <p className="text-sm text-red-700 mb-2">
+                      {error || "An error occurred"}
+                    </p>
+                    <button
+                      onClick={reset}
+                      className="text-sm text-red-700 hover:text-red-800 font-medium"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Idle Info */}
+            {status === "idle" && !isSuccess && !isError && (
+              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-gray-600 mt-0.5" />
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-1">
+                      Ready to Transfer
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      Fill in the form above and click Transfer to start
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
-        )}
 
-        <pre
-          style={{
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
-            lineHeight: "1.8",
-            marginTop: "16px",
-          }}
-        >
-          {JSON.stringify(
-            {
-              deviceId,
-              userId,
-              userToken: loginResult?.userToken,
-              encryptionKey: loginResult?.encryptionKey,
-              challengeId,
-              wallets,
-              usdcBalance,
-            },
-            null,
-            2,
-          )}
-        </pre>
+          {/* Debug Info */}
+          <div className="mt-8 p-4 bg-gray-100 rounded-lg">
+            <h4 className="text-xs font-semibold text-gray-700 mb-2">
+              Debug Info:
+            </h4>
+            <pre className="text-xs text-gray-600 overflow-x-auto">
+              {JSON.stringify(
+                {
+                  status,
+                  isConnected,
+                  isLoading,
+                  isSuccess,
+                  isError,
+                  txHash: txHash ? `${txHash.slice(0, 10)}...` : null,
+                  error: error ? error.substring(0, 50) : null,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
   );
 }

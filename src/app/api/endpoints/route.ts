@@ -183,6 +183,86 @@ export async function POST(request: Request) {
         return NextResponse.json(data.data, { status: 200 });
       }
 
+      case "createTransaction": {
+        const { userToken, walletId, contractAddress, data, value } = params;
+        if (!userToken || !walletId || !contractAddress) {
+          return NextResponse.json(
+            { error: "Missing required fields" },
+            { status: 400 },
+          );
+        }
+
+        const requestBody = {
+          idempotencyKey: crypto.randomUUID(),
+          walletId,
+          contractAddress,
+          abiFunctionSignature: "execute(address,uint256,bytes)",
+          abiParameters: [contractAddress, value || "0", data || "0x"],
+          feeLevel: "MEDIUM",
+        };
+
+        const response = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/contractExecution`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+            body: JSON.stringify(requestBody),
+          },
+        );
+
+        const responseData = await response.json();
+
+        if (!response.ok) {
+          return NextResponse.json(responseData, { status: response.status });
+        }
+
+        return NextResponse.json(responseData.data, { status: 200 });
+      }
+
+      case "sendTransaction": {
+        const { userToken, walletId, to, amount } = params;
+        if (!userToken || !walletId || !to || !amount) {
+          return NextResponse.json(
+            { error: "Missing required fields" },
+            { status: 400 },
+          );
+        }
+
+        const requestBody = {
+          idempotencyKey: crypto.randomUUID(),
+          walletId,
+          amounts: [amount],
+          destinationAddress: to,
+          tokenId: "", // Empty for native token
+          feeLevel: "MEDIUM",
+        };
+
+        const response = await fetch(
+          `${CIRCLE_BASE_URL}/v1/w3s/user/transactions/transfer`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${CIRCLE_API_KEY}`,
+              "X-User-Token": userToken,
+            },
+            body: JSON.stringify(requestBody),
+          },
+        );
+
+        const responseData = await response.json();
+
+        if (!response.ok) {
+          return NextResponse.json(responseData, { status: response.status });
+        }
+
+        return NextResponse.json(responseData.data, { status: 200 });
+      }
+
       default:
         return NextResponse.json(
           { error: `Unknown action: ${action}` },
